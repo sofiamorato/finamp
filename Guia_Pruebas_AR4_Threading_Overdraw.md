@@ -2,14 +2,14 @@
 **Threading antes/después + Repaint Rainbow (overdraw)**
 
 Dispositivo: **Samsung Galaxy A22 (SM-A225M)**, Android 13. Base de código: commit **2cb01b8** de `finamp-app/finamp` (rama `redesign`).
-Tiempo total estimado: **2 a 2.5 horas** (preparación ~45 min, mediciones ~75 min, Rainbow ~25 min).
+Tiempo total estimado: **1.5 a 2 horas** (preparación ~30 min, mediciones ~60 min, Rainbow ~25 min). **No hay que compilar:** los APK ya están hechos.
 
 > Regla de oro: **una sola persona, un solo teléfono, una sola PC** para TODAS las corridas (antes y después). Si cambia el equipo, los números dejan de ser comparables.
 
 ---
 
 ## PARTE 0 — Qué se va a hacer y por qué (léelo 1 minuto)
-- Hay **dos versiones de la misma app**, compiladas del mismo código:
+- Hay **dos versiones de la misma app** (ya compiladas, se descargan), hechas del mismo código:
   - **before** = comportamiento original (worker secuencial, cola de descargas con polling).
   - **after** = con las 3 mejoras (worker concurrente, búsqueda con resultados parciales, cola de descargas por eventos).
 - Ambas imprimen líneas `[AR4]` en el log (latencias, frames). Esas líneas se capturan con `adb logcat` y un script las resume en tablas.
@@ -19,48 +19,36 @@ Tiempo total estimado: **2 a 2.5 horas** (preparación ~45 min, mediciones ~75 m
 ---
 
 ## PARTE 1 — Requisitos en la PC (Windows)
-| Herramienta | Versión | Verificar con |
+| Herramienta | Para qué | Verificar con |
 |---|---|---|
-| Git | cualquiera | `git --version` |
-| Flutter | **3.47.x** (el mismo en antes y después) | `flutter --version` |
-| Android SDK + platform-tools (adb) | con licencias aceptadas | `flutter doctor` |
-| Rust (rustup) | **solo si el build falla por Rust** (ver nota abajo) | `rustup --version` |
-| Python | 3.9+ | `python --version` |
-| Jellyfin Server | 10.9+ | abre en `http://localhost:8096` |
-| Cable USB de datos | — | — |
+| **adb** (Android platform-tools) | instalar los APK y capturar logs | `adb version` |
+| **Python 3.9+** | resumen de resultados | `python --version` |
+| **Jellyfin Server** 10.9+ | servidor de música | abre `http://localhost:8096` |
+| Cable USB **de datos** | conectar el A22 | — |
+| *Flutter 3.47.x + Android SDK* | **solo** para las Partes 10 y 11 (DevTools y Repaint Rainbow) | `flutter doctor` |
 
-1. Ejecuta `flutter doctor` y arregla lo que marque en rojo en la sección Android.
-2. Si `adb` no está en el PATH, usa la ruta completa: `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
-3. **Sobre Rust:** al compilar puede aparecer `SEVERE: Cargokit BuildTool failed ... rustup not found in PATH`. En nuestro PC ese mensaje salió y el build terminó bien de todas formas, así que **no es obligatorio**. Solo si el build *termina en error* y el error menciona Rust: instala https://rustup.rs (opciones por defecto), abre otra terminal y ejecuta `rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android`.
-4. **NO compiles dentro de OneDrive, Desktop ni Documentos.** OneDrive bloquea archivos mientras Gradle compila y produce errores de tipo `already exists` / `Unable to delete directory`. Usa `C:r4\`.
-5. **Cierra** Android Studio / otros IDE que tengan Gradle abierto (consumen RAM y pueden bloquear el build).
+- Las Partes 3 a 9 (las 18 corridas) **solo necesitan adb, Python y Jellyfin**. No hay que compilar nada.
+- Si `adb` no está en el PATH, usa la ruta completa: `%LOCALAPPDATA%\Android\Sdk\platform-toolsdb.exe` (o descarga platform-tools de developer.android.com/tools/releases/platform-tools y descomprímelo).
+- **NO trabajes dentro de OneDrive, Desktop ni Documentos.** OneDrive bloquea archivos y da errores. Usa `C:r4\`.
 
 ---
 
-## PARTE 2 — Obtener el código y compilar las dos versiones
-Usa una ruta **corta** (Windows limita el largo de las rutas): `C:r4\`.
+## PARTE 2 — Descargar los APK y los scripts
+1. Crea la carpeta `C:r4`.
+2. Descarga los **dos APK ya compilados** (~230 MB cada uno). En PowerShell:
+   ```powershell
+   cd C:r4
+   curl.exe -L -o finamp_before.apk https://github.com/sofiamorato/finamp/releases/download/ar4-apks/finamp_before.apk
+   curl.exe -L -o finamp_after.apk  https://github.com/sofiamorato/finamp/releases/download/ar4-apks/finamp_after.apk
+   dir *.apk
+   ```
+   Cada archivo debe pesar **229 681 450 bytes**. Si pesa mucho menos, la descarga se cortó: repítela.
+   (También puedes bajarlos desde https://github.com/sofiamorato/finamp/releases/tag/ar4-apks.)
+3. Descarga los scripts y el código: https://github.com/sofiamorato/finamp/tree/ar4-threading → botón verde **Code → Download ZIP**. Descomprímelo dentro de `C:r4` de modo que quede `C:r4inamp-ar4-threading\` (el nombre de la carpeta puede variar; usa el que salga).
+4. Los scripts de captura están en la subcarpeta **`ar4_eval\`** de esa carpeta. Los comandos de las Partes 6 y siguientes se ejecutan **desde ahí**: `cd C:r4\<carpeta-descomprimida>r4_eval`.
+5. Los APK que se instalan son `profile` (modo de medición). El paquete es `com.unicornsonlsd.finamp.profile`.
 
-El zip `Finamp_AR4_proyecto.zip` ya trae el proyecto Finamp (commit base **2cb01b8**) **con las modificaciones aplicadas**. No hay que clonar ni aplicar parches.
-
-```powershell
-mkdir C:r4
-# descomprime Finamp_AR4_proyecto.zip dentro de C:r4  -> queda C:r4inamp-ar4cd C:r4inamp-ar4
-flutter pub get
-```
-Los scripts de captura están en `C:r4inamp-ar4r4_eval\`. Los cambios de código están en: `lib/services/ar4_probe.dart` (nuevo), `jellyfin_api_helper.dart`, `music_providers.dart`, `downloads_service_backend.dart` y `lib/main.dart`.
-
-Compilar (**uno a la vez, nunca dos builds simultáneos** — se pisan los archivos y falla con `PathExistsException`):
-
-```powershell
-flutter build apk --profile --dart-define=AR4_AFTER=false
-copy build\app\outputs\flutter-apk\app-profile.apk C:\ar4\finamp_before.apk
-
-flutter build apk --profile --dart-define=AR4_AFTER=true
-copy build\app\outputs\flutter-apk\app-profile.apk C:\ar4\finamp_after.apk
-```
-- Cada build tarda 10–15 min la primera vez. Es normal ver avisos de "untranslated messages": no son errores.
-- Verifica que existan los dos `.apk` antes de seguir.
-- **Modo profile** es obligatorio: debug distorsiona los tiempos.
+> Los APK se compilaron del commit base **2cb01b8** más los cambios de este repo. *Before* = comportamiento original; *after* = con las mejoras. No los modifiques ni los recompiles para las 18 corridas.
 
 ---
 
@@ -106,7 +94,7 @@ En el teléfono:
 ---
 
 ## PARTE 6 — El script de captura (cómo se usa)
-En la PC, en la carpeta `ar4_eval\` del zip:
+En la PC, desde la carpeta `ar4_eval\` (Parte 2, paso 4):
 
 ```powershell
 .\ar4_capture.ps1 -Variant before -Scenario S4 -Run 1
@@ -178,6 +166,7 @@ Imprime tablas (n / media / mediana / p90) de: latencia del worker, peticiones s
 ---
 
 ## PARTE 10 — Capturas de pantalla de DevTools (una vez por versión, escenario S4)
+> Esta parte y la 11 **sí requieren Flutter** (Parte 1). Se ejecutan desde la carpeta raíz del código descomprimido (la que contiene `pubspec.yaml`), tras `flutter pub get`. La primera compilación con `flutter run` tarda ~15 min.
 1. Con la app corriendo en modo profile: `flutter run --profile --dart-define=AR4_AFTER=false` (o `true`) en la carpeta del repo, con el A22 conectado.
 2. Abrir DevTools (el enlace que imprime la consola) → pestaña **Performance**.
 3. Hacer 2 ciclos de S4 → en **Timeline events** buscar el filtro **"AR4"**.
@@ -230,6 +219,21 @@ flutter run --dart-define=AR4_AFTER=false
 | Build falla con `PathExistsException`, `already exists` o `Unable to delete directory` | Dos builds a la vez, o proyecto dentro de OneDrive | Mover el proyecto a `C:r4`, esperar a que termine el otro build, `flutter clean` y reintentar |
 | Teléfono muy caliente / lento | Throttling térmico | Pausa 10 min; no compiles mientras mides |
 | Una corrida salió rara (interrupción, llamada) | — | Repetir esa corrida con el mismo número |
+
+---
+
+## ANEXO A — (Opcional) Compilar tú mismo los APK
+Solo si no puedes usar los APK de la release. Requiere Flutter 3.47.x y Android SDK. Si aparece `Cargokit BuildTool failed ... rustup not found`, normalmente **no impide** compilar; solo si el build termina en error mencionando Rust, instala https://rustup.rs.
+
+```powershell
+cd C:r4\<carpeta-del-codigo>
+flutter pub get
+flutter build apk --profile --dart-define=AR4_AFTER=false
+copy buildpp\outputslutter-apkpp-profile.apk C:r4inamp_before.apk
+flutter build apk --profile --dart-define=AR4_AFTER=true
+copy buildpp\outputslutter-apkpp-profile.apk C:r4inamp_after.apk
+```
+Compila **uno a la vez** (si no, falla con `already exists`). Cada build tarda 10–20 min.
 
 ---
 
