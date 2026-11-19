@@ -19,6 +19,7 @@ import 'package:uuid/uuid.dart';
 import '../models/finamp_models.dart';
 import '../models/jellyfin_models.dart';
 import '../screens/downloads_screen.dart';
+import 'ar4_probe.dart';
 import 'finamp_settings_helper.dart';
 import 'finamp_user_helper.dart';
 import 'jellyfin_api_helper.dart';
@@ -326,10 +327,18 @@ class IsarTaskQueue implements TaskQueue {
             });
             continue;
           }
+          final waitSw = Stopwatch()..start();
           while (_activeDownloads.length >= FinampSettingsHelper.finampSettings.maxConcurrentDownloads ||
               _finampUserHelper.currentUser == null) {
-            await Future<void>.delayed(const Duration(milliseconds: 500));
+            if (ar4After) {
+              // AR4 improvement C3: wake up when a slot is released instead of polling every 500 ms.
+              _slotFree = Completer<void>();
+              await _slotFree!.future.timeout(const Duration(milliseconds: 500), onTimeout: () {});
+            } else {
+              await Future<void>.delayed(const Duration(milliseconds: 500));
+            }
           }
+          ar4Log('dl', 'event=slotWait task=${task.isarId} waitMs=${waitSw.elapsedMilliseconds}');
           await SchedulerBinding.instance.scheduleTask(() {
             _activeDownloads.add(task.isarId);
             try {
@@ -371,6 +380,14 @@ class IsarTaskQueue implements TaskQueue {
                   // We currently have no way to recover here.  The user must re-sync to clear
                   // the stuck download.
                   _enqueueLog.severe("Task ${task.name} failed to enqueue with background_downloader.");
+                  if (ar4After) {
+                    // AR4 improvement C3: free the slot and mark the item failed instead of leaving it stuck.
+                    _activeDownloads.remove(task.isarId);
+                    _signalSlotFree();
+                    _isar.writeTxnSync(() {
+                      _downloadsService.updateItemState(task, DownloadItemState.failed);
+                    });
+                  }
                 }
               });
             } catch (e) {
@@ -416,6 +433,7 @@ class IsarTaskQueue implements TaskQueue {
     }
     if (_activeDownloads.contains(item.isarId)) {
       _activeDownloads.remove(item.isarId);
+      _signalSlotFree();
       await FileDownloader().cancelTaskWithId(item.isarId.toString());
     }
   }
@@ -425,6 +443,15 @@ class IsarTaskQueue implements TaskQueue {
   @override
   void taskFinished(Task task) {
     _activeDownloads.remove(int.parse(task.taskId));
+    ar4Log('dl', 'event=taskFinished task=${task.taskId} active=${_activeDownloads.length}');
+    _signalSlotFree();
+  }
+
+  Completer<void>? _slotFree;
+
+  void _signalSlotFree() {
+    final c = _slotFree;
+    if (c != null && !c.isCompleted) c.complete();
   }
 
   // We do not currently pause or resume the downloads

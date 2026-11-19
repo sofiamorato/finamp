@@ -26,6 +26,7 @@ import '../setup_logging.dart';
 import 'downloads_service.dart';
 import 'downloads_service_backend.dart';
 import 'finamp_settings_helper.dart';
+import 'ar4_probe.dart';
 import 'finamp_user_helper.dart';
 import 'jellyfin_api.dart' as jellyfin_api;
 
@@ -131,6 +132,18 @@ class JellyfinApiHelper {
       inForeground: false,
       verboseLogging: input.$6,
     );
+    if (ar4After) {
+      // AR4 improvement C1: handle each request as soon as it arrives instead of
+      // awaiting it inside the loop, so a slow request no longer blocks the others.
+      requestPort.listen((request) {
+        var (func, outputPort) = request as (Future<dynamic> Function(jellyfin_api.JellyfinApi), SendPort);
+        Future.sync(() => func(backgroundApi)).then(outputPort.send).catchError((Object e, StackTrace stack) {
+          _jellyfinApiHelperLogger.severe("Error processing background request - $e", e, stack);
+          outputPort.send(e);
+        });
+      });
+      return;
+    }
     await for (var request in requestPort) {
       var (func, outputPort) = request as (Future<dynamic> Function(jellyfin_api.JellyfinApi), SendPort);
       try {
@@ -143,22 +156,40 @@ class JellyfinApiHelper {
     }
   }
 
+  int _ar4Inflight = 0;
+  int _ar4RequestCounter = 0;
+
   /// Runs the given function in a background isolate, supplying a valid API instance.
   Future<T> runInIsolate<T>(Future<T> Function(jellyfin_api.JellyfinApi) func) async {
     if (_workerIsolatePort == null) {
       return func(jellyfinApi);
     }
+    final requestId = ++_ar4RequestCounter;
+    final inflightAtSend = ++_ar4Inflight;
+    final sw = Stopwatch()..start();
     ReceivePort port = ReceivePort();
     try {
       _workerIsolatePort!.send((func, port.sendPort));
     } catch (e) {
       GlobalSnackbar.error(e);
+      if (ar4After) {
+        // AR4 improvement C1: do not wait forever for a request the worker never received.
+        port.close();
+        _ar4Inflight--;
+        return func(jellyfinApi);
+      }
     }
-    dynamic output = await port.first;
-    if (output is T) {
-      return output;
+    try {
+      dynamic output = await port.first;
+      if (output is T) {
+        return output;
+      }
+      throw output as Object;
+    } finally {
+      _ar4Inflight--;
+      ar4Log('worker', 'id=$requestId inflightAtSend=$inflightAtSend latencyMs=${sw.elapsedMilliseconds}');
+      if (ar4After) port.close(); // AR4 improvement C1: release the temporary port.
     }
-    throw output as Object;
   }
 
   Future<List<BaseItemDto>?> getItems({

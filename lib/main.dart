@@ -1,3 +1,4 @@
+import 'services/ar4_probe.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -213,6 +214,7 @@ Future<void> main(List<String> args, {bool integrationTesting = false, bool logi
 
   // Integration testing will launch the widgets itself, so just return
   if (!integrationTesting) {
+    ar4StartFrameProbe();
     runApp(const Finamp());
   }
 }

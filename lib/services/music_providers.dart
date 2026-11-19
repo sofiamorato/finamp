@@ -13,6 +13,7 @@ import '../models/jellyfin_models.dart';
 import '../models/music_models.dart';
 import '../models/music_slices.dart';
 import 'album_screen_provider.dart';
+import 'ar4_probe.dart';
 import 'artist_content_provider.dart';
 import 'finamp_settings_helper.dart';
 import 'finamp_user_helper.dart';
@@ -51,7 +52,12 @@ Future<List<BaseItemDto>> globalSearch(Ref ref, String searchTerm, {required boo
     searchTerm: searchTerm,
     limit: 10,
   );
-  final values = await Future.wait([baseFuture, artistFuture, genreFuture]);
+  final sw = Stopwatch()..start();
+  // AR4 improvement C2: each category fails independently, so partial results survive.
+  Future<List<BaseItemDto>?> partial(Future<List<BaseItemDto>?> f) =>
+      ar4After ? f.catchError((Object _) => null) : f;
+  final values = await Future.wait([partial(baseFuture), partial(artistFuture), partial(genreFuture)]);
+  ar4Log('search', 'term=${searchTerm.length}chars totalMs=${sw.elapsedMilliseconds}');
   final out = <BaseItemDto>[];
   for (var val in values) {
     if (val != null) {
