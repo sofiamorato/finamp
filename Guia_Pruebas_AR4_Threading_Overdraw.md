@@ -24,18 +24,14 @@ Tiempo total estimado: **2 a 2.5 horas** (preparación ~45 min, mediciones ~75 m
 | Git | cualquiera | `git --version` |
 | Flutter | **3.47.x** (el mismo en antes y después) | `flutter --version` |
 | Android SDK + platform-tools (adb) | con licencias aceptadas | `flutter doctor` |
-| **Rust (rustup)** | estable — **obligatorio**: Finamp compila código Rust (plugin Cargokit) para Android | `rustup --version` |
+| Rust (rustup) | **solo si el build falla por Rust** (ver nota abajo) | `rustup --version` |
 | Python | 3.9+ | `python --version` |
 | Jellyfin Server | 10.9+ | abre en `http://localhost:8096` |
 | Cable USB de datos | — | — |
 
 1. Ejecuta `flutter doctor` y arregla lo que marque en rojo en la sección Android.
 2. Si `adb` no está en el PATH, usa la ruta completa: `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
-3. **Instalar Rust** (si `rustup --version` falla): https://rustup.rs → `rustup-init.exe` → opciones por defecto. Después **cierra y abre otra terminal** y ejecuta:
-   ```powershell
-   rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-   ```
-   Sin Rust el build falla con `rustup not found in PATH`. (Windows también puede pedir "Build Tools de Visual Studio / C++" para Rust: acepta la instalación que ofrece el instalador.)
+3. **Sobre Rust:** al compilar puede aparecer `SEVERE: Cargokit BuildTool failed ... rustup not found in PATH`. En nuestro PC ese mensaje salió y el build terminó bien de todas formas, así que **no es obligatorio**. Solo si el build *termina en error* y el error menciona Rust: instala https://rustup.rs (opciones por defecto), abre otra terminal y ejecuta `rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android`.
 4. **NO compiles dentro de OneDrive, Desktop ni Documentos.** OneDrive bloquea archivos mientras Gradle compila y produce errores de tipo `already exists` / `Unable to delete directory`. Usa `C:r4\`.
 5. **Cierra** Android Studio / otros IDE que tengan Gradle abierto (consumen RAM y pueden bloquear el build).
 
@@ -123,6 +119,15 @@ En la PC, en la carpeta `ar4_eval\` del zip:
 Orden recomendado (minimiza reinstalaciones): hacer TODO "before" (9 corridas) y luego TODO "after" (9 corridas).
 
 Antes de **cada** corrida: cerrar Finamp por completo (recientes → deslizar), y abrirlo **después** de lanzar el script y antes de empezar la acción.
+
+---
+
+## PARTE 6.5 — PRUEBA RÁPIDA (5 min, hazla ANTES de las 18 corridas)
+Sirve para no gastar 2 horas si algo no captura:
+1. Instala `finamp_before.apk`, inicia sesión (Parte 5).
+2. `.r4_capture.ps1 -Variant before -Scenario S5 -Run 0` → abre Finamp → Ajustes → Home Screen → busca **un** término → vuelve a la PC → ENTER.
+3. Abre `logsefore_S5_r0.txt`: deben verse líneas `[AR4][frame]`, `[AR4][worker]` y `[AR4][search]`. Si hay 0 líneas o faltan los tipos `worker`/`search`, **avísame antes de seguir** (manda el texto de `adb logcat -d -s flutter | findstr AR4`).
+4. Borra `logsefore_S5_r0.txt` (no es una corrida válida).
 
 ---
 
@@ -222,7 +227,7 @@ flutter run --dart-define=AR4_AFTER=false
 | `adb devices` vacío o `unauthorized` | Cable solo-carga / sin permiso | Cambiar cable; revocar autorizaciones USB y reconectar |
 | El script dice **0 líneas AR4** | App cerrada, logs filtrados | Verifica con `adb logcat -d -s flutter \| findstr AR4`; confirma que instalaste un APK **profile** |
 | La app no conecta al servidor | Falta el reverse | `adb reverse tcp:8096 tcp:8096` y probar en Chrome del teléfono |
-| Build falla con `PathExistsException` | Dos builds a la vez | Esperar a que uno termine; `flutter clean` y reintentar |
+| Build falla con `PathExistsException`, `already exists` o `Unable to delete directory` | Dos builds a la vez, o proyecto dentro de OneDrive | Mover el proyecto a `C:r4`, esperar a que termine el otro build, `flutter clean` y reintentar |
 | Teléfono muy caliente / lento | Throttling térmico | Pausa 10 min; no compiles mientras mides |
 | Una corrida salió rara (interrupción, llamada) | — | Repetir esa corrida con el mismo número |
 
