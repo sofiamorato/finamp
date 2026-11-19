@@ -24,13 +24,20 @@ Tiempo total estimado: **2 a 2.5 horas** (preparación ~45 min, mediciones ~75 m
 | Git | cualquiera | `git --version` |
 | Flutter | **3.47.x** (el mismo en antes y después) | `flutter --version` |
 | Android SDK + platform-tools (adb) | con licencias aceptadas | `flutter doctor` |
+| **Rust (rustup)** | estable — **obligatorio**: Finamp compila código Rust (plugin Cargokit) para Android | `rustup --version` |
 | Python | 3.9+ | `python --version` |
 | Jellyfin Server | 10.9+ | abre en `http://localhost:8096` |
 | Cable USB de datos | — | — |
 
 1. Ejecuta `flutter doctor` y arregla lo que marque en rojo en la sección Android.
 2. Si `adb` no está en el PATH, usa la ruta completa: `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
-3. **Cierra** Android Studio / otros IDE que tengan Gradle abierto (consumen RAM y pueden bloquear el build).
+3. **Instalar Rust** (si `rustup --version` falla): https://rustup.rs → `rustup-init.exe` → opciones por defecto. Después **cierra y abre otra terminal** y ejecuta:
+   ```powershell
+   rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+   ```
+   Sin Rust el build falla con `rustup not found in PATH`. (Windows también puede pedir "Build Tools de Visual Studio / C++" para Rust: acepta la instalación que ofrece el instalador.)
+4. **NO compiles dentro de OneDrive, Desktop ni Documentos.** OneDrive bloquea archivos mientras Gradle compila y produce errores de tipo `already exists` / `Unable to delete directory`. Usa `C:r4\`.
+5. **Cierra** Android Studio / otros IDE que tengan Gradle abierto (consumen RAM y pueden bloquear el build).
 
 ---
 
